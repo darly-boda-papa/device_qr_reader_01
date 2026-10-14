@@ -5,7 +5,7 @@ const STORAGE_KEY = "qrReader.serials";
 const CAMERA_KEY = "qrReader.camera";
 const SAME_CODE_COOLDOWN_MS = 2000; // 같은 코드를 연속 인식하지 않는 간격
 const SCAN_INTERVAL_MS = 120;       // 프레임 분석 간 쉬는 시간
-const FULL_FRAME_EVERY = 4;         // 조준 영역에서 못 찾으면 N번에 한 번 전체 화면 분석
+const FULL_FRAME_EVERY = 3;        // 조준 영역에서 못 찾으면 N번에 한 번 전체 화면 분석
 const FULL_MAX_SIZE = 1280;         // 전체 화면 분석 시 최대 크기(px)
 const READER_OPTIONS = {
   formats: ["DataMatrix", "QRCode"],
@@ -18,7 +18,7 @@ const readerReady = (async () => {
   ZXingWASM.prepareZXingModule({
     overrides: {
       locateFile: (path, prefix) =>
-        path.endsWith(".wasm") ? new URL(path, location.href).href : prefix + path,
+        path.endsWith(".wasm") ? new URL(`${path}?v=3`, location.href).href : prefix + path,
     },
     fireImmediately: true,
   });

@@ -4,12 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#1f2937" />
+  <meta http-equiv="Cache-Control" content="no-cache" />
   <title>Device QR Reader</title>
-  <link rel="stylesheet" href="style.css" />
+  <!-- 파일을 수정하면 ?v= 숫자를 올려서 폰 브라우저가 새 파일을 받게 함 -->
+  <link rel="stylesheet" href="style.css?v=3" />
 </head>
 <body>
   <header>
-    <h1>Device QR Reader</h1>
+    <h1>Device QR Reader <span class="ver">v3 · DataMatrix</span></h1>
     <div class="tabs" role="tablist">
       <button id="tabRegister" class="tab active" data-mode="register">① 등록</button>
       <button id="tabCheck" class="tab" data-mode="check">② 확인</button>
@@ -76,7 +78,7 @@
   </section>
 
   <!-- ZXing: QR / Data Matrix 인식 (zxing_reader.wasm 파일과 함께 사용) -->
-  <script src="zxing-reader.js"></script>
-  <script src="script.js"></script>
+  <script src="zxing-reader.js?v=3"></script>
+  <script src="script.js?v=3"></script>
 </body>
 </html>
