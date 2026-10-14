@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#1f2937" />
+  <title>Device QR Reader</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Device QR Reader</h1>
+    <div class="tabs" role="tablist">
+      <button id="tabRegister" class="tab active" data-mode="register">① 등록</button>
+      <button id="tabCheck" class="tab" data-mode="check">② 확인</button>
+    </div>
+  </header>
+
+  <section class="scanner">
+    <div class="video-wrap">
+      <video id="video" playsinline muted></video>
+      <div class="aim"></div>
+      <div id="videoPlaceholder" class="placeholder">아래 [스캔 시작]을 눌러 주세요</div>
+    </div>
+
+    <div class="cam-controls">
+      <button id="startBtn" class="primary">스캔 시작</button>
+      <button id="stopBtn" hidden>중지</button>
+      <button id="torchBtn" hidden>🔦</button>
+      <select id="cameraSelect" hidden title="카메라 선택"></select>
+    </div>
+    <div id="zoomRow" class="zoom-row" hidden>
+      <span>줌</span>
+      <input id="zoomRange" type="range" />
+    </div>
+
+    <div id="status" class="status idle">
+      <div id="statusMain" class="status-main">등록 모드</div>
+      <div id="statusSub" class="status-sub">기기 QR을 순서 상관없이 스캔하면 오름차순으로 정렬됩니다</div>
+    </div>
+  </section>
+
+  <section class="list">
+    <div class="list-head">
+      <h2>Serial 목록 <span id="countBadge" class="badge">0</span></h2>
+      <div class="list-actions">
+        <button id="resetMarksBtn" hidden>표시 초기화</button>
+        <button id="clearBtn" class="danger">전체 삭제</button>
+      </div>
+    </div>
+
+    <div class="manual">
+      <input id="manualInput" type="text" autocapitalize="characters" autocomplete="off"
+             placeholder="직접 입력 후 Enter" />
+      <button id="manualBtn">입력</button>
+    </div>
+
+    <details id="pasteBox" class="paste">
+      <summary>여러 개 한 번에 붙여넣기</summary>
+      <textarea id="pasteArea" rows="5" placeholder="한 줄에 하나씩 (메신저·메일에서 복사한 목록)"></textarea>
+      <button id="pasteBtn" class="primary">목록에 추가</button>
+    </details>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Serial</th>
+          <th>No.</th>
+          <th>indicator</th>
+          <th class="col-del"></th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <p id="emptyMsg" class="empty">등록된 Serial이 없습니다</p>
+  </section>
+
+  <script src="jsqr.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
