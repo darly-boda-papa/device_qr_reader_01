@@ -36,7 +36,7 @@
 
     <div id="status" class="status idle">
       <div id="statusMain" class="status-main">등록 모드</div>
-      <div id="statusSub" class="status-sub">기기 QR을 순서 상관없이 스캔하면 오름차순으로 정렬됩니다</div>
+      <div id="statusSub" class="status-sub">기기 코드를 순서 상관없이 스캔하면 오름차순으로 정렬됩니다</div>
     </div>
   </section>
 
@@ -75,7 +75,8 @@
     <p id="emptyMsg" class="empty">등록된 Serial이 없습니다</p>
   </section>
 
-  <script src="jsqr.min.js"></script>
+  <!-- ZXing: QR / Data Matrix 인식 (zxing_reader.wasm 파일과 함께 사용) -->
+  <script src="zxing-reader.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

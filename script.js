@@ -3,9 +3,28 @@
 // ===== 설정 =====
 const STORAGE_KEY = "qrReader.serials";
 const CAMERA_KEY = "qrReader.camera";
-const SAME_CODE_COOLDOWN_MS = 2000; // 같은 QR을 연속 인식하지 않는 간격
-const SCAN_INTERVAL_MS = 150;       // 프레임 분석 주기
-const SCAN_MAX_SIZE = 800;          // 분석용 이미지 최대 크기(px)
+const SAME_CODE_COOLDOWN_MS = 2000; // 같은 코드를 연속 인식하지 않는 간격
+const SCAN_INTERVAL_MS = 120;       // 프레임 분석 간 쉬는 시간
+const FULL_FRAME_EVERY = 4;         // 조준 영역에서 못 찾으면 N번에 한 번 전체 화면 분석
+const FULL_MAX_SIZE = 1280;         // 전체 화면 분석 시 최대 크기(px)
+const READER_OPTIONS = {
+  formats: ["DataMatrix", "QRCode"],
+  tryHarder: true,
+  maxNumberOfSymbols: 1,
+};
+
+// ZXing(WASM) 준비 — wasm 파일도 같은 폴더에서 불러옴(외부 CDN 미사용)
+const readerReady = (async () => {
+  ZXingWASM.prepareZXingModule({
+    overrides: {
+      locateFile: (path, prefix) =>
+        path.endsWith(".wasm") ? new URL(path, location.href).href : prefix + path,
+    },
+    fireImmediately: true,
+  });
+  // 빈 이미지로 한 번 실행해 wasm 로딩 완료를 확인
+  await ZXingWASM.readBarcodes(new ImageData(8, 8), READER_OPTIONS);
+})();
 
 // ===== DOM =====
 const $ = (id) => document.getElementById(id);
@@ -21,7 +40,9 @@ let doneSet = new Set(); // 확인 모드에서 확인된 serial
 let blinkSerial = null;  // 확인 모드에서 현재 깜빡이는 serial
 let newSerial = null;    // 등록 모드에서 방금 추가된 serial
 let stream = null;
+let scanning = false;
 let scanTimer = null;
+let frameCount = 0;
 let wakeLock = null;
 let lastCode = "";
 let lastCodeTime = 0;
@@ -126,10 +147,10 @@ function setMode(m) {
   newSerial = null;
   lastCode = "";
   if (m === "register") {
-    setStatus("idle", "등록 모드", "기기 QR을 순서 상관없이 스캔하면 오름차순으로 정렬됩니다");
+    setStatus("idle", "등록 모드", "기기 코드를 순서 상관없이 스캔하면 오름차순으로 정렬됩니다");
   } else {
     setStatus("idle", "확인 모드", serials.length
-      ? `QR을 스캔하면 ${serials.length}개 중 몇 번째인지 표시합니다`
+      ? `코드를 스캔하면 ${serials.length}개 중 몇 번째인지 표시합니다`
       : "먼저 등록 모드에서 Serial을 등록해 주세요");
   }
   render();
@@ -269,7 +290,8 @@ async function startCamera(deviceId) {
     return;
   }
   stopCamera();
-  const size = { width: { ideal: 1280 }, height: { ideal: 720 } };
+  // 작은 Data Matrix를 읽기 위해 고해상도 요청
+  const size = { width: { ideal: 1920 }, height: { ideal: 1080 } };
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       video: deviceId ? { deviceId: { exact: deviceId }, ...size } : { facingMode: "environment", ...size },
@@ -302,11 +324,21 @@ async function startCamera(deviceId) {
   setupTrackControls(track);
   requestWakeLock();
 
-  scanTimer = setInterval(scanFrame, SCAN_INTERVAL_MS);
+  try {
+    await readerReady;
+  } catch (err) {
+    console.error(err);
+    setStatus("nomatch", "인식 엔진 로딩 실패", "zxing_reader.wasm 파일이 업로드되었는지 확인해 주세요");
+    return;
+  }
+  scanning = true;
+  frameCount = 0;
+  scanLoop();
 }
 
 function stopCamera() {
-  clearInterval(scanTimer);
+  scanning = false;
+  clearTimeout(scanTimer);
   scanTimer = null;
   if (stream) stream.getTracks().forEach((t) => t.stop());
   stream = null;
@@ -323,6 +355,11 @@ function stopCamera() {
 // 줌 / 플래시 (지원하는 기기에서만 표시)
 function setupTrackControls(track) {
   const caps = track.getCapabilities ? track.getCapabilities() : {};
+
+  // 가까운 거리 초점을 위해 연속 자동초점 사용
+  if (caps.focusMode && caps.focusMode.includes("continuous")) {
+    track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {});
+  }
 
   const torchBtn = $("torchBtn");
   torchBtn.hidden = !caps.torch;
@@ -355,20 +392,58 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && stream) requestWakeLock();
 });
 
-function scanFrame() {
+// 화면의 조준 사각형에 해당하는 영상 영역(원본 해상도 기준)
+function aimRect(vw, vh) {
+  const box = video.getBoundingClientRect();
+  const aim = document.querySelector(".aim").getBoundingClientRect();
+  const scale = Math.max(box.width / vw, box.height / vh); // object-fit: cover
+  const offX = (vw * scale - box.width) / 2;
+  const offY = (vh * scale - box.height) / 2;
+  const pad = aim.width * 0.15; // 조준 사각형보다 약간 넓게
+  const x = Math.max(0, (aim.left - box.left - pad + offX) / scale);
+  const y = Math.max(0, (aim.top - box.top - pad + offY) / scale);
+  const w = Math.min(vw - x, (aim.width + pad * 2) / scale);
+  const h = Math.min(vh - y, (aim.height + pad * 2) / scale);
+  return [x, y, w, h];
+}
+
+function grab(sx, sy, sw, sh, maxSize) {
+  const scale = Math.min(1, maxSize / Math.max(sw, sh));
+  const w = Math.max(1, Math.round(sw * scale));
+  const h = Math.max(1, Math.round(sh * scale));
+  canvas.width = w;
+  canvas.height = h;
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
+  return ctx.getImageData(0, 0, w, h);
+}
+
+async function scanFrame() {
   if (!stream || video.readyState < 2) return;
   const vw = video.videoWidth;
   const vh = video.videoHeight;
   if (!vw || !vh) return;
-  const scale = Math.min(1, SCAN_MAX_SIZE / Math.max(vw, vh));
-  const w = Math.round(vw * scale);
-  const h = Math.round(vh * scale);
-  canvas.width = w;
-  canvas.height = h;
-  ctx.drawImage(video, 0, 0, w, h);
-  const img = ctx.getImageData(0, 0, w, h);
-  const result = jsQR(img.data, w, h, { inversionAttempts: "dontInvert" });
-  if (result && result.data) handleCode(result.data);
+
+  // 1) 조준 영역을 원본 해상도로 분석 (작은 코드 인식에 유리, 빠름)
+  const [x, y, w, h] = aimRect(vw, vh);
+  let results = await ZXingWASM.readBarcodes(grab(x, y, w, h, 1600), READER_OPTIONS);
+
+  // 2) 못 찾으면 가끔 전체 화면도 분석
+  if (!results.length && ++frameCount % FULL_FRAME_EVERY === 0) {
+    results = await ZXingWASM.readBarcodes(grab(0, 0, vw, vh, FULL_MAX_SIZE), READER_OPTIONS);
+  }
+
+  const hit = results.find((r) => r.isValid && r.text);
+  if (hit) handleCode(hit.text);
+}
+
+async function scanLoop() {
+  if (!scanning) return;
+  try {
+    await scanFrame();
+  } catch (err) {
+    console.error(err);
+  }
+  if (scanning) scanTimer = setTimeout(scanLoop, SCAN_INTERVAL_MS);
 }
 
 $("startBtn").addEventListener("click", () => startCamera(localStorage.getItem(CAMERA_KEY)));
